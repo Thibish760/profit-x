@@ -84,7 +84,7 @@ export default function HomeScreen() {
           <View style={styles.profitContent}>
             <View style={styles.iconBox}>
               <Image
-                source={{ uri: "https://via.placeholder.com/48x30" }}
+                source={require('../../assets/images/bannerlogo.png')}
                 style={{ width: 48, height: 30 }}
               />
             </View>
@@ -158,7 +158,7 @@ export default function HomeScreen() {
           <View style={styles.todayCard}>
             <View style={styles.tdisplayBox}>
               <Image
-                source={{ uri: "https://via.placeholder.com/80x80" }}
+                source={require('../../assets/images/today.png')}
                 style={styles.tcardImage}
               />
             </View>
