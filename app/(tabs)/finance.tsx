@@ -35,6 +35,8 @@ const MONTHS = [
 ];
 
 const YEARS = ['2023', '2024', '2025', '2026'];
+const OWNER_NAME = 'Chief';
+const SHOP_NAME = 'Samosa Shop';
 
 type PaymentRecord = {
   amount: number;
@@ -115,6 +117,12 @@ export default function FinanceScreen() {
   const [newVendorLoanInput, setNewVendorLoanInput] = useState('');
   const [historyVendors, setHistoryVendors] = useState<FinanceVendor[]>([]);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const greeting = useMemo(() => {
+    const hour = new Date().getHours();
+    if (hour < 12) return 'Good Morning';
+    if (hour < 17) return 'Good Afternoon';
+    return 'Good Evening';
+  }, []);
 
   const activePaymentVendor = useMemo(
     () => vendors.find(vendor => vendor.id === paymentVendorId) ?? null,
@@ -294,6 +302,10 @@ export default function FinanceScreen() {
         <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
           {/* Header */}
           <View style={styles.header}>
+            <View style={styles.headerTextWrap}>
+              <Text style={styles.headerGreeting} numberOfLines={1}>{`${greeting}, ${OWNER_NAME}`}</Text>
+              <Text style={styles.headerSubText}>{SHOP_NAME}</Text>
+            </View>
             <TouchableOpacity style={styles.profileBtn} onPress={() => setDrawerOpen(true)}>
               <Image source={require('../../assets/images/cornerlogo.png')} style={styles.profileImg} />
             </TouchableOpacity>
@@ -691,14 +703,29 @@ const styles = StyleSheet.create({
 
   header: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'flex-end',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
     marginBottom: 20,
     marginTop: 36,
   },
+  headerTextWrap: {
+    flex: 1,
+    paddingRight: 12,
+  },
+  headerGreeting: {
+    color: '#ffffff',
+    fontSize: 20,
+    fontWeight: '700',
+  },
+  headerSubText: {
+    color: '#ACFE3E',
+    fontSize: 12,
+    fontWeight: '500',
+    marginTop: 0,
+  },
   profileBtn: {
     padding: 4,
-    alignSelf: 'flex-end',
+    marginTop: 2,
   },
   profileImg: {
     width: 26,

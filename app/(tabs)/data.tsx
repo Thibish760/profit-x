@@ -2,7 +2,7 @@
  * DataScreen â€“ Finance Income Entry & History
  * Dark fintech theme Â· Neon green Â· Glassmorphism
  */
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   SafeAreaView,
   ScrollView,
@@ -36,10 +36,12 @@ import {
 
 const LinearGradient = _LG as React.ComponentType<any>;
 const { width: W } = Dimensions.get('window');
-const INCOME_TABLE_MIN_WIDTH = 452;
+const INCOME_TABLE_MIN_WIDTH = 568;
 const WEEKLY_TABLE_MIN_WIDTH = 484;
 const TABLE_CARD_WIDTH = W * 0.9;
 const TABLE_GAP = 18;
+const OWNER_NAME = 'Chief';
+const SHOP_NAME = 'Samosa Shop';
 
 /* â”€â”€â”€ Design tokens â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 const NEON        = '#00FF88';
@@ -163,6 +165,12 @@ export default function DataScreen() {
   const [incomeRows, setIncomeRows] = useState<IncomeRow[]>([]);
   const [addRows, setAddRows]       = useState<AdditionalRow[]>([]);
   const didHydrateRef = useRef(false);
+  const greeting = useMemo(() => {
+    const hour = new Date().getHours();
+    if (hour < 12) return 'Good Morning';
+    if (hour < 17) return 'Good Afternoon';
+    return 'Good Evening';
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -213,7 +221,6 @@ export default function DataScreen() {
   const totalGPay       = incomeRows.reduce((s, r) => s + numVal(r.gpay), 0);
   const totalMalliKadai = incomeRows.reduce((s, r) => s + numVal(r.malliKadai), 0);
   const totalMarket     = incomeRows.reduce((s, r) => s + numVal(r.market), 0);
-  const incomeProfitTotal = totalCash + totalGPay - totalMalliKadai - totalMarket;
 
   const addTotals = addRows.reduce(
     (a, r) => ({
@@ -226,6 +233,17 @@ export default function DataScreen() {
     { egg: 0, piece: 0, potato: 0, gas: 0, fuel: 0 },
   );
   const addGrandTotal = addTotals.egg + addTotals.piece + addTotals.potato + addTotals.gas + addTotals.fuel;
+  const addByDate = addRows.reduce<Record<string, number>>((acc, r) => {
+    const total = numVal(r.egg) + numVal(r.piece) + numVal(r.potato) + numVal(r.gas) + numVal(r.fuel);
+    acc[r.date] = (acc[r.date] || 0) + total;
+    return acc;
+  }, {});
+  const incomeOnlyTotal = totalCash + totalGPay;
+  const investTotal = incomeRows.reduce(
+    (s, r) => s + numVal(r.market) + numVal(r.malliKadai) + (addByDate[r.date] || 0),
+    0,
+  );
+  const incomeProfitTotal = incomeOnlyTotal - investTotal;
 
   /* â”€â”€ Render â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
   return (
@@ -235,10 +253,10 @@ export default function DataScreen() {
 
         {/* â”€â”€ Header â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
         <View style={s.header}>
-          <TouchableOpacity style={s.headerBackBtn} onPress={() => router.back()}>
-            <Ionicons name="arrow-back" size={20} color={TEXT} />
-          </TouchableOpacity>
-          <Text style={s.headerTitle}>Enter the Incomes</Text>
+          <View style={s.headerTextWrap}>
+            <Text style={s.headerGreeting} numberOfLines={1}>{`${greeting}, ${OWNER_NAME}`}</Text>
+            <Text style={s.headerSubText}>{SHOP_NAME}</Text>
+          </View>
           <TouchableOpacity style={s.profileCircle} onPress={() => setDrawerOpen(true)}>
             <Image source={require('../../assets/images/cornerlogo.png')} style={s.profileImg} />
           </TouchableOpacity>
@@ -271,7 +289,7 @@ export default function DataScreen() {
                 <LabeledInput label="Malli Kadia"  value={incomeForm.malliKadai} onChangeText={t => setIncomeForm(f => ({ ...f, malliKadai: t }))} keyboardType="decimal-pad" />
                 <LabeledInput label="Market(Amha)" value={incomeForm.market}      onChangeText={t => setIncomeForm(f => ({ ...f, market: t }))}      keyboardType="decimal-pad" />
 
-                <TouchableOpacity onPress={handleUpload} activeOpacity={0.82} style={{ marginTop: 22 }}>
+                <TouchableOpacity onPress={handleUpload} activeOpacity={0.82} style={{ marginTop: 12 }}>
                   <LinearGradient
                     colors={['#3F8105', '#ACFE3E']}
                     start={{ x: 0, y: 0 }}
@@ -328,7 +346,7 @@ export default function DataScreen() {
                   <LabeledInput label="Potato" value={addForm.potato} onChangeText={t => setAddForm(f => ({ ...f, potato: t }))} keyboardType="decimal-pad" />
                   <LabeledInput label="Gas"    value={addForm.gas}    onChangeText={t => setAddForm(f => ({ ...f, gas: t }))}    keyboardType="decimal-pad" />
                   <LabeledInput label="Fuel"   value={addForm.fuel}   onChangeText={t => setAddForm(f => ({ ...f, fuel: t }))}   keyboardType="decimal-pad" />
-                  <TouchableOpacity onPress={handleAddEntry} activeOpacity={0.82} style={{ marginTop: 16 }}>
+                  <TouchableOpacity onPress={handleAddEntry} activeOpacity={0.82} style={{ marginTop: 10 }}>
                     <LinearGradient
                       colors={['#3F8105', '#ACFE3E']}
                       start={{ x: 0, y: 0 }}
@@ -364,8 +382,8 @@ export default function DataScreen() {
                   <View>
                     {/* Header */}
                     <View style={s.thRow}>
-                      {['Date','Cash','GPay','Malli Kadai','Market','Profit',''].map((h, i) => (
-                        <Text key={i} style={[s.th, { width: [72, 60, 60, 80, 64, 64, 36][i] }]}>{h}</Text>
+                      {['Date','Cash','GPay','Malli Kadai','Market','Income','Invest','Profit',''].map((h, i) => (
+                        <Text key={i} style={[s.th, { width: [72, 60, 60, 80, 64, 70, 70, 64, 36][i] }]}>{h}</Text>
                       ))}
                     </View>
                     {/* Rows */}
@@ -375,7 +393,9 @@ export default function DataScreen() {
                       </View>
                     ) : (
                       incomeRows.map((r, idx) => {
-                        const rowProfit = numVal(r.cash) + numVal(r.gpay) - numVal(r.malliKadai) - numVal(r.market);
+                        const rowIncome = numVal(r.cash) + numVal(r.gpay);
+                        const rowInvest = numVal(r.market) + numVal(r.malliKadai) + (addByDate[r.date] || 0);
+                        const rowProfit = rowIncome - rowInvest;
                         return (
                           <View key={r.id} style={[s.tdRow, { backgroundColor: idx % 2 === 0 ? ROW_EVEN : ROW_ODD }]}>
                             <Text style={[s.td,       { width: 72 }]}>{r.date}</Text>
@@ -383,6 +403,8 @@ export default function DataScreen() {
                             <Text style={[s.td,       { width: 60 }]}>{r.gpay       || '0'}</Text>
                             <Text style={[s.td,       { width: 80 }]}>{r.malliKadai || '0'}</Text>
                             <Text style={[s.td,       { width: 64 }]}>{r.market     || '0'}</Text>
+                            <Text style={[s.td,       { width: 70 }]}>{rowIncome.toFixed(0)}</Text>
+                            <Text style={[s.td,       { width: 70 }]}>{rowInvest.toFixed(0)}</Text>
                             <Text style={[s.tdProfit, { width: 64 }]}>{rowProfit.toFixed(0)}</Text>
                             <TouchableOpacity
                               style={s.deleteBtn}
@@ -402,6 +424,8 @@ export default function DataScreen() {
                         <Text style={[s.totalCell,       { width: 60 }]}>{totalGPay.toFixed(0)}</Text>
                         <Text style={[s.totalCell,       { width: 80 }]}>{totalMalliKadai.toFixed(0)}</Text>
                         <Text style={[s.totalCell,       { width: 64 }]}>{totalMarket.toFixed(0)}</Text>
+                        <Text style={[s.totalCell,       { width: 70 }]}>{incomeOnlyTotal.toFixed(0)}</Text>
+                        <Text style={[s.totalCell,       { width: 70 }]}>{investTotal.toFixed(0)}</Text>
                         <Text style={[s.totalCellProfit, { width: 64 }]}>{incomeProfitTotal.toFixed(0)}</Text>
                         <View style={{ width: 36 }} />
                       </View>
@@ -491,11 +515,27 @@ const s = StyleSheet.create({
   /* â”€â”€ Header â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
   header: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
+    paddingHorizontal: 20,
     paddingTop: Platform.OS === 'android' ? 44 : 10,
     paddingBottom: 10,
+  },
+  headerTextWrap: {
+    flex: 1,
+    paddingRight: 12,
+    marginTop: 6,
+  },
+  headerGreeting: {
+    color: '#FFFFFF',
+    fontSize: 20,
+    fontWeight: '700',
+  },
+  headerSubText: {
+    color: '#ACFE3E',
+    fontSize: 12,
+    fontWeight: '500',
+    marginTop: 0,
   },
   headerBackBtn: {
     width: 36,
@@ -513,7 +553,7 @@ const s = StyleSheet.create({
   },
   profileCircle: {
     padding: 4,
-    alignSelf: 'flex-end',
+    marginTop: 8,
   },
   profileImg: {
     width: 26,
@@ -522,16 +562,19 @@ const s = StyleSheet.create({
   },
 
   scrollContent: {
-    paddingHorizontal: 14,
+    paddingHorizontal: 20,
     paddingTop: 4,
   },
 
   /* â”€â”€ Income entry card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
   /* ── Income entry card ──────────────────────────────────────────────────── */
   incomeCardBorder: {
+    width: '98%',
+    alignSelf: 'center',
     borderRadius: 18,
     padding: 1.5,
-    marginBottom: 14,
+    marginTop:8,
+    marginBottom: 10,
     shadowColor: '#49BA20',
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.55,
@@ -544,20 +587,20 @@ const s = StyleSheet.create({
     overflow: 'hidden',
   },
   cardContent: {
-    padding: 18,
-    paddingTop: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
   },
   enterAmountLabel: {
     color: '#FBFF06',
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '800',
-    marginBottom: 6,
+    marginBottom: 4,
     letterSpacing: 0.3,
   },
 
   /* â”€â”€ Labeled input â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
   labeledField: {
-    marginTop: 10,
+    marginTop: 7,
   },
   fieldLabel: {
     color: 'rgb(255, 255, 255)',
@@ -573,9 +616,9 @@ const s = StyleSheet.create({
     borderColor: INPUT_BDR,
     borderRadius: 8,
     paddingHorizontal: 12,
-    paddingVertical: 9,
+    paddingVertical: 7,
     color: TEXT,
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '500',
   },
 
@@ -584,7 +627,7 @@ const s = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 12,
+    paddingVertical: 10,
     borderRadius: 12,
     gap: 8,
   },
@@ -603,7 +646,7 @@ const s = StyleSheet.create({
     borderRadius: 14,
     borderWidth: 1,
     borderColor: '#ACFE3E',
-    paddingVertical: 12,
+    paddingVertical: 10,
     paddingHorizontal: 14,
     marginBottom: 10,
     shadowColor: NEON,

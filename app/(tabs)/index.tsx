@@ -15,7 +15,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
-import Svg, { Line, Path, Circle, Defs, LinearGradient as SvgLinearGradient, Stop, Text as SvgText } from 'react-native-svg';
+import Svg, { Line, Path, Circle, Defs, Rect, LinearGradient as SvgLinearGradient, Stop, Text as SvgText } from 'react-native-svg';
 import ProfileDrawer from '../../components/ProfileDrawer';
 import BottomNavBar from '../../components/BottomNavBar';
 import {
@@ -26,6 +26,8 @@ import {
 
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 const YEARS = ['2023','2024','2025','2026'];
+const OWNER_NAME = 'Chief';
+const SHOP_NAME = 'Samosa Shop';
 
 const toNum = (value: string) => parseFloat(value) || 0;
 
@@ -57,6 +59,7 @@ export default function HomeScreen() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [incomeRows, setIncomeRows] = useState<IncomeRow[]>([]);
   const [addRows, setAddRows] = useState<AdditionalRow[]>([]);
+  const [selectedChartDate, setSelectedChartDate] = useState<string | null>(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -129,7 +132,36 @@ export default function HomeScreen() {
   const profitTotal = grossTotal - investmentTotal;
 
   const latestRow = profitRows.length ? profitRows[profitRows.length - 1] : null;
-  const chartRows = profitRows.slice(-7);
+  const chartRows = useMemo(() => {
+    if (!profitRows.length) return [];
+
+    if (month) {
+      return profitRows.filter((row) => {
+        const d = parseDMY(row.date);
+        if (!d) return false;
+        const monthMatch = MONTHS[d.getMonth()] === month;
+        const yearMatch = !year || String(d.getFullYear()) === year;
+        return monthMatch && yearMatch;
+      });
+    }
+
+    const lastDate = parseDMY(profitRows[profitRows.length - 1].date);
+    if (!lastDate) return profitRows;
+    const targetMonth = lastDate.getMonth();
+    const targetYear = lastDate.getFullYear();
+
+    return profitRows.filter((row) => {
+      const d = parseDMY(row.date);
+      return !!d && d.getMonth() === targetMonth && d.getFullYear() === targetYear;
+    });
+  }, [profitRows, month, year]);
+  const chartMonthTitle = useMemo(() => {
+    if (!chartRows.length) return 'No Data Month';
+    const firstDate = parseDMY(chartRows[0].date);
+    if (!firstDate) return month || 'Selected Month';
+    return `${MONTHS[firstDate.getMonth()]} ${firstDate.getFullYear()}`;
+  }, [chartRows, month]);
+  const activeChartDate = chartRows.some(r => r.date === selectedChartDate) ? selectedChartDate : null;
   const _cp = chartRows.map(r => r.profit);
   const chartMin = Math.min(0, ...(_cp.length ? _cp : [0]));
   const chartMax = Math.max(1, ...(_cp.length ? _cp : [1]));
@@ -144,6 +176,8 @@ export default function HomeScreen() {
     const pts = chartRows.map((row, i) => ({
       x: n > 1 ? chartLeft + i * xStep : 206,
       y: 175 - ((row.profit - chartMin) / chartRange) * 165,
+      income: row.cash + row.gpay,
+      invest: row.investment,
       profit: row.profit,
       date: row.date,
     }));
@@ -164,6 +198,13 @@ export default function HomeScreen() {
   };
 
   const chart = buildChart();
+  const selectedPoint = activeChartDate ? chart?.pts.find((pt) => pt.date === activeChartDate) || null : null;
+  const greeting = useMemo(() => {
+    const hour = new Date().getHours();
+    if (hour < 12) return 'Good Morning';
+    if (hour < 17) return 'Good Afternoon';
+    return 'Good Evening';
+  }, []);
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -176,6 +217,10 @@ export default function HomeScreen() {
       >
         <ScrollView contentContainerStyle={styles.container}>
           <View style={styles.header}>
+            <View style={styles.headerTextWrap}>
+              <Text style={styles.headerGreeting} numberOfLines={1}>{`${greeting}, ${OWNER_NAME}`}</Text>
+              <Text style={styles.headerSubText}>{SHOP_NAME}</Text>
+            </View>
             <TouchableOpacity style={styles.profileBtn} onPress={() => setDrawerOpen(true)}>
               <Image source={require('../../assets/images/cornerlogo.png')} style={styles.profileImg} />
             </TouchableOpacity>
@@ -220,21 +265,78 @@ export default function HomeScreen() {
                   <Path d={chart.fillD} fill="url(#areaGrad)" />
                   <Path d={chart.pathD} stroke="#ACFE3E" strokeWidth="2.5" fill="none" strokeLinejoin="round" strokeLinecap="round" />
 
+                  {selectedPoint && (
+                    <>
+                      <Rect
+                        x={Math.max(54, Math.min(selectedPoint.x - 70, 216))}
+                        y={Math.max(12, selectedPoint.y - 62)}
+                        width="140"
+                        height="52"
+                        rx="8"
+                        fill="rgba(12,17,20,0.92)"
+                        stroke="rgba(172,254,62,0.55)"
+                        strokeWidth="1"
+                      />
+                      <SvgText
+                        x={Math.max(60, Math.min(selectedPoint.x - 64, 222))}
+                        y={Math.max(26, selectedPoint.y - 48)}
+                        fontSize="8"
+                        fill="#ACFE3E"
+                        fontWeight="700"
+                      >
+                        {selectedPoint.date}
+                      </SvgText>
+                      <SvgText
+                        x={Math.max(60, Math.min(selectedPoint.x - 64, 222))}
+                        y={Math.max(37, selectedPoint.y - 37)}
+                        fontSize="8"
+                        fill="#E5E7EB"
+                      >
+                        Income: {selectedPoint.income.toFixed(0)}
+                      </SvgText>
+                      <SvgText
+                        x={Math.max(60, Math.min(selectedPoint.x - 64, 222))}
+                        y={Math.max(48, selectedPoint.y - 26)}
+                        fontSize="8"
+                        fill="#E5E7EB"
+                      >
+                        Invest: {selectedPoint.invest.toFixed(0)}
+                      </SvgText>
+                      <SvgText
+                        x={Math.max(60, Math.min(selectedPoint.x - 64, 222))}
+                        y={Math.max(59, selectedPoint.y - 15)}
+                        fontSize="8"
+                        fill="#E5E7EB"
+                      >
+                        Profit: {selectedPoint.profit.toFixed(0)}
+                      </SvgText>
+                    </>
+                  )}
+
                   {chart.pts.map((pt, pi) => {
                     const parts = pt.date.split('/');
                     const shortDate = parts.length >= 2 ? `${parts[0]}/${parts[1]}` : pt.date.slice(0, 5);
                     const valLabel = Math.abs(pt.profit) >= 1000 ? `${(pt.profit / 1000).toFixed(1)}k` : pt.profit.toFixed(0);
                     const dotColor = pt.profit >= 0 ? '#ACFE3E' : '#FF6B6B';
+                    const isSelected = pt.date === activeChartDate;
                     return (
                       <React.Fragment key={`pt-${pi}`}>
-                        <Circle cx={pt.x} cy={pt.y} r={4} fill={dotColor} stroke="#0C1114" strokeWidth="1.5" />
+                        <Circle
+                          cx={pt.x}
+                          cy={pt.y}
+                          r={isSelected ? 6 : 4}
+                          fill={dotColor}
+                          stroke={isSelected ? '#ffffff' : '#0C1114'}
+                          strokeWidth={isSelected ? 2 : 1.5}
+                          onPress={() => setSelectedChartDate(prev => (prev === pt.date ? null : pt.date))}
+                        />
                         <SvgText x={pt.x} y={pt.y - 9} fontSize="8" fill={dotColor} textAnchor="middle">{valLabel}</SvgText>
                         <SvgText x={pt.x} y="192" fontSize="9" fill="rgba(255,255,255,0.55)" textAnchor="middle">{shortDate}</SvgText>
                       </React.Fragment>
                     );
                   })}
 
-                  <SvgText x="6" y="100" fontSize="9" fill="rgba(255,255,255,0.40)" textAnchor="middle" rotation="-90" originX="6" originY="100">{'\u20b9'} Profit</SvgText>
+                  <SvgText x="1" y="110" fontSize="9" fill="rgba(255,255,255,0.40)" textAnchor="middle" rotation="-90" originX="6" originY="100">Profit</SvgText>
                   <SvgText x="200" y="212" fontSize="9" fill="rgba(255,255,255,0.40)" textAnchor="middle">Date</SvgText>
                 </Svg>
               )}
@@ -242,7 +344,7 @@ export default function HomeScreen() {
 
             <View style={styles.chartInfo}>
               <Text style={styles.statusText}>{profitTotal >= 0 ? 'In Profit' : 'In Loss'}</Text>
-              <Text style={styles.chartTitle}>Profit Chart</Text>
+              <Text style={styles.chartTitle}>{chartMonthTitle}</Text>
               <Text style={styles.amount}>Rupee <Text style={styles.whiteText}>{profitTotal.toFixed(2)}</Text></Text>
             </View>
           </View>
@@ -421,11 +523,14 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#0C1114' },
   bgGradient: { flex: 1 },
   container: { padding: 20, paddingBottom: 120 },
-  header: { flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', marginBottom: 20, marginTop: 30 },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20, marginTop: 30 },
+  headerTextWrap: { flex: 1, paddingRight: 12 },
+  headerGreeting: { color: '#ffffff', fontSize: 20, fontWeight: '700' },
+  headerSubText: { color: '#ACFE3E', fontSize: 12, fontWeight: '500', marginTop: 0 },
   iconBtn: { padding: 6 },
   iconText: { color: COLORS.textGray, fontSize: 22 },
   accentBtn: { borderRadius: 8 },
-  profileBtn: { padding: 4, alignSelf: 'flex-end' },
+  profileBtn: { padding: 4, marginTop: 2 },
   profileImg: { width: 26, height: 26, borderRadius: 4 },
 
   chartSection: { marginBottom: -5 },
