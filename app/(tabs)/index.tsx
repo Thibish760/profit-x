@@ -1,5 +1,6 @@
-import React, { useState } from "react";
-import { LinearGradient } from "expo-linear-gradient";
+import React, { useCallback, useMemo, useState } from "react";
+import { LinearGradient as _LG } from "expo-linear-gradient";
+const LinearGradient = _LG as React.ComponentType<any>;
 import {
   SafeAreaView,
   View,
@@ -8,382 +9,476 @@ import {
   Image,
   TouchableOpacity,
   ScrollView,
-} from "react-native";
+  Modal,
+  FlatList,
+  Pressable,
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
+import Svg, { Line, Path, Circle, Defs, LinearGradient as SvgLinearGradient, Stop, Text as SvgText } from 'react-native-svg';
+import ProfileDrawer from '../../components/ProfileDrawer';
+import BottomNavBar from '../../components/BottomNavBar';
+import {
+  loadFinanceSnapshot,
+  type AdditionalRow,
+  type IncomeRow,
+} from '../../constants/finance-storage';
+
+const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+const YEARS = ['2023','2024','2025','2026'];
+
+const toNum = (value: string) => parseFloat(value) || 0;
+
+const parseDMY = (value: string): Date | null => {
+  const normalized = value.trim();
+  if (!normalized) return null;
+  const slash = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(normalized);
+  if (slash) {
+    const dd = Number(slash[1]);
+    const mm = Number(slash[2]);
+    const yyyy = Number(slash[3]);
+    const date = new Date(yyyy, mm - 1, dd);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+  const parsed = new Date(normalized);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
+const formatMoney = (value: number) => `\u20b9${value.toFixed(2)}`;
+
+const additionalInvestment = (row: AdditionalRow) =>
+  toNum(row.egg) + toNum(row.piece) + toNum(row.potato) + toNum(row.gas) + toNum(row.fuel);
 
 export default function HomeScreen() {
-  const months = ["", "01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12"];
-  const monthLabels = ["All", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-  const years = ["2022", "2023", "2024", "2025"];
+  const [month, setMonth] = useState('');
+  const [year, setYear] = useState('');
+  const [monthDropdown, setMonthDropdown] = useState(false);
+  const [yearDropdown, setYearDropdown] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [incomeRows, setIncomeRows] = useState<IncomeRow[]>([]);
+  const [addRows, setAddRows] = useState<AdditionalRow[]>([]);
 
-  const [monthIdx, setMonthIdx] = useState(0);
-  const [yearIdx, setYearIdx] = useState(3);
+  useFocusEffect(
+    useCallback(() => {
+      const sync = async () => {
+        const snapshot = await loadFinanceSnapshot();
+        setIncomeRows(snapshot.incomeRows);
+        setAddRows(snapshot.addRows);
+      };
+      sync();
+    }, []),
+  );
 
-  const month = months[monthIdx];
-  const year = years[yearIdx];
-
-  const vals = getValuesFor(month, year);
-
-  const cardItems: { key: keyof Values; title: string }[] = [
-    { key: "cash", title: "Cash" },
-    { key: "gpay", title: "GPay" },
-    { key: "total", title: "Total" },
-    { key: "invest", title: "Investment" },
-  ];
-
-  const getImageUri = (key: keyof Values, title: string) => {
-    // Prefer local images (map keys to files in `assets/images`) so bundler loads them.
-    const localImages: Partial<Record<keyof Values, any>> = {
-      cash: require('../../assets/images/cash.png'),
-      gpay: require('../../assets/images/gpay.png'),
-      total: require('../../assets/images/total.png'),
-      invest: require('../../assets/images/invest.png'),
-    };
-
-    if (localImages[key]) return localImages[key];
-
-    // Fallback to a remote placeholder.
-    return { uri: `https://via.placeholder.com/135x80?text=${encodeURIComponent(title)}` };
+  const images: Record<string, any> = {
+    cash: require('../../assets/images/cash.png'),
+    gpay: require('../../assets/images/gpay.png'),
+    total: require('../../assets/images/total.png'),
+    invest: require('../../assets/images/invest.png'),
+    today: require('../../assets/images/today.png'),
   };
+
+  const filteredIncomeRows = useMemo(() => {
+    return incomeRows.filter((row) => {
+      const date = parseDMY(row.date);
+      if (!date) return !month && !year;
+      const monthMatch = !month || MONTHS[date.getMonth()] === month;
+      const yearMatch = !year || String(date.getFullYear()) === year;
+      return monthMatch && yearMatch;
+    });
+  }, [incomeRows, month, year]);
+
+  const filteredAdditionalRows = useMemo(() => {
+    return addRows.filter((row) => {
+      const date = parseDMY(row.date);
+      if (!date) return !month && !year;
+      const monthMatch = !month || MONTHS[date.getMonth()] === month;
+      const yearMatch = !year || String(date.getFullYear()) === year;
+      return monthMatch && yearMatch;
+    });
+  }, [addRows, month, year]);
+
+  const additionalByDate = useMemo(() => {
+    const map = new Map<string, number>();
+    filteredAdditionalRows.forEach((row) => {
+      map.set(row.date, (map.get(row.date) || 0) + additionalInvestment(row));
+    });
+    return map;
+  }, [filteredAdditionalRows]);
+
+  const profitRows = useMemo(() => {
+    return filteredIncomeRows
+      .map((row) => {
+        const cash = toNum(row.cash);
+        const gpay = toNum(row.gpay);
+        const incomeInvestment = toNum(row.malliKadai) + toNum(row.market);
+        const investment = incomeInvestment + (additionalByDate.get(row.date) || 0);
+        const profit = cash + gpay - investment;
+        return { date: row.date, cash, gpay, investment, profit };
+      })
+      .sort((a, b) => {
+        const ad = parseDMY(a.date)?.getTime() || 0;
+        const bd = parseDMY(b.date)?.getTime() || 0;
+        return ad - bd;
+      });
+  }, [filteredIncomeRows, additionalByDate]);
+
+  const cashTotal = profitRows.reduce((sum, row) => sum + row.cash, 0);
+  const gpayTotal = profitRows.reduce((sum, row) => sum + row.gpay, 0);
+  const investmentTotal = profitRows.reduce((sum, row) => sum + row.investment, 0);
+  const grossTotal = cashTotal + gpayTotal;
+  const profitTotal = grossTotal - investmentTotal;
+
+  const latestRow = profitRows.length ? profitRows[profitRows.length - 1] : null;
+  const chartRows = profitRows.slice(-7);
+  const _cp = chartRows.map(r => r.profit);
+  const chartMin = Math.min(0, ...(_cp.length ? _cp : [0]));
+  const chartMax = Math.max(1, ...(_cp.length ? _cp : [1]));
+  const chartRange = (chartMax - chartMin) || 1;
+
+  const buildChart = () => {
+    const n = chartRows.length;
+    if (n === 0) return null;
+    const chartLeft = 60;
+    const chartWidth = 292;
+    const xStep = n > 1 ? chartWidth / (n - 1) : 0;
+    const pts = chartRows.map((row, i) => ({
+      x: n > 1 ? chartLeft + i * xStep : 206,
+      y: 175 - ((row.profit - chartMin) / chartRange) * 165,
+      profit: row.profit,
+      date: row.date,
+    }));
+    let pathD = `M ${pts[0].x.toFixed(1)} ${pts[0].y.toFixed(1)}`;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const p0 = i > 0 ? pts[i - 1] : pts[i];
+      const p1 = pts[i];
+      const p2 = pts[i + 1];
+      const p3 = i < pts.length - 2 ? pts[i + 2] : p2;
+      const cp1x = p1.x + (p2.x - p0.x) / 6;
+      const cp1y = p1.y + (p2.y - p0.y) / 6;
+      const cp2x = p2.x - (p3.x - p1.x) / 6;
+      const cp2y = p2.y - (p3.y - p1.y) / 6;
+      pathD += ` C ${cp1x.toFixed(1)} ${cp1y.toFixed(1)}, ${cp2x.toFixed(1)} ${cp2y.toFixed(1)}, ${p2.x.toFixed(1)} ${p2.y.toFixed(1)}`;
+    }
+    const fillD = `${pathD} L ${pts[pts.length - 1].x.toFixed(1)} 175 L ${pts[0].x.toFixed(1)} 175 Z`;
+    return { pts, pathD, fillD };
+  };
+
+  const chart = buildChart();
 
   return (
     <SafeAreaView style={styles.safe}>
-      <ScrollView contentContainerStyle={styles.container}>
-        {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity style={styles.iconBtn}>
-            <Text style={styles.iconText}>←</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.iconBtn}>
-            <Image
-              source={{ uri: "https://via.placeholder.com/24" }}
-              style={{ width: 24, height: 24 }}
-            />
-          </TouchableOpacity>
-        </View>
-
-        {/* CHART */}
-        <View style={styles.chartSection}>
-          <View style={styles.chartCard}>
-            <Text style={{ color: "rgba(255,255,255,0.7)" }}>
-              Chart Placeholder
-            </Text>
+      <LinearGradient
+        colors={['#2c3e50', '#0C1114']}
+        locations={[0, 0.30]}
+        start={[0, 0]}
+        end={[0, 1]}
+        style={styles.bgGradient}
+      >
+        <ScrollView contentContainerStyle={styles.container}>
+          <View style={styles.header}>
+            <TouchableOpacity style={styles.profileBtn} onPress={() => setDrawerOpen(true)}>
+              <Image source={require('../../assets/images/cornerlogo.png')} style={styles.profileImg} />
+            </TouchableOpacity>
           </View>
 
-          <View style={styles.chartInfo}>
-            <Text style={styles.statusText}>In Profit</Text>
-            <Text style={styles.chartTitle}>Monthly Income</Text>
-            <Text style={styles.amount}>
-              Rupee <Text style={styles.whiteText}>{formatCurrency(vals.total)}</Text>
-            </Text>
-          </View>
-        </View>
+          <View style={styles.chartSection}>
+            <View style={styles.chartCard}>
+              {chart === null ? (
+                <Text style={{ color: '#ffffff70', opacity: 0.6 }}>[No profit data yet]</Text>
+              ) : (
+                <Svg width="100%" height="100%" viewBox="0 0 360 220">
+                  <Defs>
+                    <SvgLinearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
+                      <Stop offset="0%" stopColor="#ACFE3E" stopOpacity="0.30" />
+                      <Stop offset="100%" stopColor="#ACFE3E" stopOpacity="0" />
+                    </SvgLinearGradient>
+                  </Defs>
 
-        {/* PROFIT BANNER */}
-        <LinearGradient colors={["#3F8105", "#ACFE3E"]} style={styles.profitBanner}>
-          <View style={styles.profitContent}>
-            <View style={styles.iconBox}>
-              <Image
-                source={require('../../assets/images/bannerlogo.png')}
-                style={{ width: 48, height: 30 }}
-              />
+                  {[0, 0.25, 0.5, 0.75, 1.0].map((pct, gi) => {
+                    const yPos = 175 - pct * 165;
+                    const val = chartMin + chartRange * pct;
+                    const label = Math.abs(val) >= 1000 ? `${(val / 1000).toFixed(1)}k` : val.toFixed(0);
+                    return (
+                      <React.Fragment key={gi}>
+                        <Line x1="48" y1={yPos} x2="352" y2={yPos} stroke="rgba(255,255,255,0.07)" strokeWidth="1" />
+                        <SvgText x="44" y={yPos + 4} fontSize="9" fill="rgba(255,255,255,0.45)" textAnchor="end">{label}</SvgText>
+                      </React.Fragment>
+                    );
+                  })}
+
+                  <Line x1="48" y1="10" x2="48" y2="175" stroke="rgba(255,255,255,0.30)" strokeWidth="1" />
+                  <Line x1="48" y1="175" x2="352" y2="175" stroke="rgba(255,255,255,0.30)" strokeWidth="1" />
+
+                  {chartMin < 0 && chartMax > 0 && (
+                    <Line
+                      x1="48" y1={175 - ((0 - chartMin) / chartRange) * 165}
+                      x2="352" y2={175 - ((0 - chartMin) / chartRange) * 165}
+                      stroke="rgba(255,100,100,0.35)" strokeWidth="1" strokeDasharray="4,3"
+                    />
+                  )}
+
+                  <Path d={chart.fillD} fill="url(#areaGrad)" />
+                  <Path d={chart.pathD} stroke="#ACFE3E" strokeWidth="2.5" fill="none" strokeLinejoin="round" strokeLinecap="round" />
+
+                  {chart.pts.map((pt, pi) => {
+                    const parts = pt.date.split('/');
+                    const shortDate = parts.length >= 2 ? `${parts[0]}/${parts[1]}` : pt.date.slice(0, 5);
+                    const valLabel = Math.abs(pt.profit) >= 1000 ? `${(pt.profit / 1000).toFixed(1)}k` : pt.profit.toFixed(0);
+                    const dotColor = pt.profit >= 0 ? '#ACFE3E' : '#FF6B6B';
+                    return (
+                      <React.Fragment key={`pt-${pi}`}>
+                        <Circle cx={pt.x} cy={pt.y} r={4} fill={dotColor} stroke="#0C1114" strokeWidth="1.5" />
+                        <SvgText x={pt.x} y={pt.y - 9} fontSize="8" fill={dotColor} textAnchor="middle">{valLabel}</SvgText>
+                        <SvgText x={pt.x} y="192" fontSize="9" fill="rgba(255,255,255,0.55)" textAnchor="middle">{shortDate}</SvgText>
+                      </React.Fragment>
+                    );
+                  })}
+
+                  <SvgText x="6" y="100" fontSize="9" fill="rgba(255,255,255,0.40)" textAnchor="middle" rotation="-90" originX="6" originY="100">{'\u20b9'} Profit</SvgText>
+                  <SvgText x="200" y="212" fontSize="9" fill="rgba(255,255,255,0.40)" textAnchor="middle">Date</SvgText>
+                </Svg>
+              )}
             </View>
 
-            <Text style={styles.profitText}>ProfitX</Text>
-          </View>
-        </LinearGradient>
-
-        {/* AMOUNT MENU */}
-        <View style={styles.menuSection}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Amount Menu</Text>
-
-            <View style={styles.filtersRow}>
-              <TouchableOpacity
-                style={styles.select}
-                onPress={() => setMonthIdx((monthIdx + 1) % monthLabels.length)}
-              >
-                <Text style={styles.selectText}>{monthLabels[monthIdx]}</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.select}
-                onPress={() => setYearIdx((yearIdx + 1) % years.length)}
-              >
-                <Text style={styles.selectText}>{year}</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.filterBtn}
-                onPress={() => {
-                  setMonthIdx(0);
-                  setYearIdx(3);
-                }}
-              >
-                <Text style={{ color: "#000" }}>Reset</Text>
-              </TouchableOpacity>
+            <View style={styles.chartInfo}>
+              <Text style={styles.statusText}>{profitTotal >= 0 ? 'In Profit' : 'In Loss'}</Text>
+              <Text style={styles.chartTitle}>Profit Chart</Text>
+              <Text style={styles.amount}>Rupee <Text style={styles.whiteText}>{profitTotal.toFixed(2)}</Text></Text>
             </View>
           </View>
 
-          {/* CARDS */}
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            {cardItems.map((item) => {
-              const value = vals[item.key];
+          <LinearGradient
+            colors={['#3F8105', '#ACFE3E']}
+            start={[0, 0]}
+            end={[1, 0]}
+            style={styles.profitBanner}
+          >
+            <View style={styles.profitContent}>
+              <View style={styles.iconBox}>
+                <Image source={require('../../assets/images/bannerlogo.png')} style={{margin:0, width: 58, height: 30}} />
+              </View>
+              <Text style={styles.profitText}>ProfitX</Text>
+            </View>
+          </LinearGradient>
 
-              return (
-                <View key={item.key} style={styles.card}>
-                  <View style={styles.cardInner}>
-                    <View style={styles.displayBox}>
-                      <Image
-                        source={getImageUri(item.key, item.title)}
-                        style={styles.cardImage}
-                      />
-                    </View>
+          <View style={styles.menuSection}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Amount Menu</Text>
+              <View style={styles.filtersRow}>
+                <TouchableOpacity style={styles.select} onPress={() => setMonthDropdown(true)}>
+                  <Text style={styles.selectText}>{month || 'Month'}</Text>
+                </TouchableOpacity>
+                <View style={styles.yearFilter}>
+                  <TouchableOpacity style={styles.select} onPress={() => setYearDropdown(true)}>
+                    <Text style={styles.selectText}>{year || 'Year'}</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => {}}>
+                    <LinearGradient
+                      colors={['#3F8105', '#ACFE3E']}
+                      start={[0, 0]}
+                      end={[1, 0]}
+                      style={styles.filterBtn}
+                    >
+                      <Ionicons name="filter" size={12} color="#fff" />
+                    </LinearGradient>
+                  </TouchableOpacity>
+                </View>
+              </View>
 
+              <Modal transparent visible={monthDropdown} animationType="fade" onRequestClose={() => setMonthDropdown(false)}>
+                <Pressable style={styles.modalOverlay} onPress={() => setMonthDropdown(false)}>
+                  <View style={styles.dropdownBox}>
+                    <FlatList
+                      data={MONTHS}
+                      keyExtractor={item => item}
+                      renderItem={({ item }) => (
+                        <TouchableOpacity style={styles.dropdownItem} onPress={() => { setMonth(item); setMonthDropdown(false); }}>
+                          <Text style={[styles.dropdownText, month === item && styles.dropdownTextActive]}>{item}</Text>
+                        </TouchableOpacity>
+                      )}
+                    />
+                  </View>
+                </Pressable>
+              </Modal>
+
+              <Modal transparent visible={yearDropdown} animationType="fade" onRequestClose={() => setYearDropdown(false)}>
+                <Pressable style={styles.modalOverlay} onPress={() => setYearDropdown(false)}>
+                  <View style={styles.dropdownBox}>
+                    <FlatList
+                      data={YEARS}
+                      keyExtractor={item => item}
+                      renderItem={({ item }) => (
+                        <TouchableOpacity style={styles.dropdownItem} onPress={() => { setYear(item); setYearDropdown(false); }}>
+                          <Text style={[styles.dropdownText, year === item && styles.dropdownTextActive]}>{item}</Text>
+                        </TouchableOpacity>
+                      )}
+                    />
+                  </View>
+                </Pressable>
+              </Modal>
+            </View>
+
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.cardsWrapper}>
+              {[
+                { key: 'cash', title: 'Cash', value: formatMoney(cashTotal) },
+                { key: 'gpay', title: 'GPay', value: formatMoney(gpayTotal) },
+                { key: 'total', title: 'Total', value: formatMoney(grossTotal) },
+                { key: 'invest', title: 'Investment', value: formatMoney(investmentTotal) },
+              ].map(item => (
+                <LinearGradient
+                  key={item.key}
+                  colors={['#ffffff', '#ffffff', '#8a8a8a', '#6f6f6f', '#0C1114', '#0C1114']}
+                  locations={[0, 0.10, 0.30, 0.55, 0.75, 1.0]}
+                  start={[0, 0]}
+                  end={[0, 1]}
+                  style={styles.card}
+                >
+                  <LinearGradient
+                    colors={['#1a1a1a', 'rgba(30,30,30,0.63)']}
+                    start={[0, 0]}
+                    end={[0, 1]}
+                    style={styles.cardInner}
+                  >
+                    <LinearGradient
+                      colors={['#7CFF00', '#7CFF00', '#000000', '#000000']}
+                      locations={[0, 0.10, 0.30, 1.0]}
+                      start={[0, 0]}
+                      end={[1, 1]}
+                      style={styles.displayBox}
+                    >
+                      <View style={styles.cardImageContainer}>
+                        <Image
+                          source={images[item.key] || { uri: 'https://via.placeholder.com/135x80' }}
+                          style={styles.cardImage}
+                          resizeMode="cover"
+                        />
+                      </View>
+                    </LinearGradient>
                     <Text style={styles.title}>{item.title}</Text>
-                    <Text style={styles.amountGreen}>
-                      {formatCurrency(value)}
-                    </Text>
+                    <Text style={styles.amountGreen}>{item.value}</Text>
+                  </LinearGradient>
+                </LinearGradient>
+              ))}
+            </ScrollView>
+          </View>
+
+          <View style={styles.todaySection}>
+            <Text style={styles.sectionTitle}>Today</Text>
+            <LinearGradient
+              colors={['#ffffff', '#ffffff', '#8a8a8a', '#6f6f6f', '#0C1114', '#0C1114']}
+              locations={[0, 0.10, 0.30, 0.55, 0.75, 1.0]}
+              start={[0, 0]}
+              end={[1, 0]}
+              style={styles.todayCardd}
+            >
+              <LinearGradient
+                colors={['#1a1a1a', 'rgba(30,30,30,0.63)']}
+                start={[0, 0]}
+                end={[0, 1]}
+                style={styles.todayCard}
+              >
+                <LinearGradient
+                  colors={['#7CFF00', '#7CFF00', '#000000', '#000000']}
+                  locations={[0, 0.10, 0.30, 1.0]}
+                  start={[0, 0]}
+                  end={[1, 1]}
+                  style={styles.tdisplayBox}
+                >
+                  <View style={styles.tcardImageContainer}>
+                    <Image source={images.today} style={styles.tcardImage} resizeMode="cover" />
+                  </View>
+                </LinearGradient>
+                <View style={styles.itemDetails}>
+                  <Text style={styles.meta}>Time: <Text style={styles.metaValue}>--:--</Text> | Date: <Text style={styles.metaValue}>{latestRow?.date || '--/--/----'}</Text></Text>
+                  <View style={styles.statsRow}>
+                    <Text>Profit <Text style={styles.green}>{formatMoney(latestRow?.profit || 0)}</Text></Text>
+                  </View>
+                  <View style={styles.statsRow}>
+                    <Text>Investment <Text style={styles.yellow}>{formatMoney(latestRow?.investment || 0)}</Text></Text>
                   </View>
                 </View>
-              );
-            })}
-          </ScrollView>
-        </View>
-
-        {/* TODAY SECTION */}
-        <View style={styles.todaySection}>
-          <Text style={styles.sectionTitle}>Today</Text>
-
-          <View style={styles.todayCard}>
-            <View style={styles.tdisplayBox}>
-              <Image
-                source={require('../../assets/images/today.png')}
-                style={styles.tcardImage}
-              />
-            </View>
-
-            <View style={{ flex: 1 }}>
-              <Text style={styles.meta}>
-                Time: <Text style={styles.metaValue}>--:--</Text> | Date:{" "}
-                <Text style={styles.metaValue}>--/--/----</Text>
-              </Text>
-
-              <Text>
-                Profit <Text style={styles.green}>₹{vals.todayProfit}</Text>
-              </Text>
-
-              <Text>
-                Investment <Text style={styles.yellow}>₹{vals.todayInvest}</Text>
-              </Text>
-            </View>
+              </LinearGradient>
+            </LinearGradient>
           </View>
-        </View>
+        </ScrollView>
+      </LinearGradient>
 
-        {/* FAB */}
-        <View style={styles.fabContainer}>
-          <TouchableOpacity style={styles.fabMain}>
-            <Text style={styles.fabText}>Enter The Data</Text>
-          </TouchableOpacity>
-        </View>
-      </ScrollView>
+      <ProfileDrawer visible={drawerOpen} onClose={() => setDrawerOpen(false)} />
+      <BottomNavBar />
     </SafeAreaView>
   );
 }
 
 const COLORS = {
-  bgDarker: "#0f172a",
-  textWhite: "#ffffff",
-  textGray: "#94a3b8",
-  textGreen: "#84cc16",
-  accent: "#84cc16",
+  bgDarker: '#0f172a',
+  textWhite: '#ffffff',
+  textGray: '#94a3b8',
+  textGreen: '#84cc16',
+  accent: '#84cc16',
 };
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: COLORS.bgDarker },
-
+  safe: { flex: 1, backgroundColor: '#0C1114' },
+  bgGradient: { flex: 1 },
   container: { padding: 20, paddingBottom: 120 },
-
-  header: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: 20,
-  },
-
+  header: { flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', marginBottom: 20, marginTop: 30 },
   iconBtn: { padding: 6 },
-
   iconText: { color: COLORS.textGray, fontSize: 22 },
+  accentBtn: { borderRadius: 8 },
+  profileBtn: { padding: 4, alignSelf: 'flex-end' },
+  profileImg: { width: 26, height: 26, borderRadius: 4 },
 
-  chartSection: { marginBottom: 20 },
+  chartSection: { marginBottom: -5 },
+  chartCard: { height: 230, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', alignItems: 'center', justifyContent: 'center', marginBottom: 20 },
+  chartInfo: { paddingLeft: 6 },
+  statusText: { color: COLORS.textGreen, fontSize: 12, fontWeight: '500' },
+  chartTitle: { fontSize: 20, fontWeight: '800', color: COLORS.textWhite, marginVertical: 0 },
+  amount: { color: COLORS.textGray, fontSize: 14 },
+  whiteText: { color: COLORS.textWhite, fontWeight: '600' },
 
-  chartCard: {
-    height: 200,
-    borderRadius: 20,
-    backgroundColor: "rgba(255,255,255,0.05)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
+  profitBanner: { marginVertical: 20, marginHorizontal: -20, paddingVertical: 15, paddingHorizontal: 20, borderTopRightRadius: 50, borderBottomRightRadius: 50, width: '50%', shadowColor: '#ACFE3E', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.4, shadowRadius: 15, elevation: 8 },
+  profitContent: { flexDirection: 'row', alignItems: 'center', gap: 15 },
+  iconBox: { width: 48, height: 30, borderRadius: 6, alignItems: 'center', justifyContent: 'center' },
+  profitText: { color: '#352B2A', fontWeight: '700', fontSize: 18 },
 
-  chartInfo: { marginTop: 10 },
+  menuSection: { marginTop: 1 },
+  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  sectionTitle: { fontSize: 18, fontWeight: '600', color: COLORS.textWhite },
+  filtersRow: { flexDirection: 'row', gap: 4, alignItems: 'center' },
+  select: { paddingVertical: 2, paddingHorizontal: 16, borderRadius: 8, borderWidth: 1, borderColor: '#ccc', backgroundColor: '#ffffff' },
+  selectText: { color: '#333333', fontSize: 8 },
+  yearFilter: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  filterBtn: { width: 20, height: 20, borderRadius: 4, alignItems: 'center', justifyContent: 'center' },
 
-  statusText: { color: COLORS.textGreen },
+  cardsWrapper: { marginVertical: 8, paddingBottom: 0 },
+  card: { minWidth: 60, width: 120, height: 180, borderRadius: 22, padding: 2, marginRight: 10, flexShrink: 0 },
+  cardInner: { flex: 1, borderRadius: 20, overflow: 'hidden', flexDirection: 'column', alignItems: 'center' },
+  displayBox: { width: '82%', height: 80, marginTop: 18, borderRadius: 14, padding: 2 },
+  cardImageContainer: { flex: 1, borderRadius: 12, backgroundColor: '#010101', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  cardImage: { width: 135, height: 80, borderRadius: 12 },
+  title: { marginTop: 18, color: COLORS.textWhite, fontSize: 12, fontWeight: '500' },
+  amountGreen: { marginTop: 4, color: '#7CFF00', fontSize: 14, fontWeight: '400' },
 
-  chartTitle: {
-    fontSize: 20,
-    fontWeight: "600",
-    color: COLORS.textWhite,
-  },
+  todaySection: { marginTop: 20 },
+  todayCardd: { marginTop: 15, borderRadius: 16, padding: 2, height: 120 },
+  todayCard: { flexDirection: 'row', alignItems: 'center', gap: 20, borderRadius: 16, padding: 15, height: 115 },
+  tdisplayBox: { width: '25%', height: 90, borderRadius: 14, padding: 2 },
+  tcardImageContainer: { flex: 1, borderRadius: 12, backgroundColor: '#010101', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  tcardImage: { width: 135, height: 80, borderRadius: 12 },
+  itemDetails: { flex: 1 },
+  meta: { fontSize: 12, color: '#a69e9e', marginBottom: 8 },
+  metaValue: { color: COLORS.textWhite },
+  statsRow: { marginBottom: 6 },
+  green: { color: COLORS.textGreen, fontWeight: '600' },
+  yellow: { color: '#facc15', fontWeight: '600' },
 
-  amount: { color: COLORS.textGray },
+  fabContainer: { marginTop: 16, alignItems: 'center' },
+  fabMain: { backgroundColor: COLORS.accent, paddingVertical: 12, paddingHorizontal: 28, borderRadius: 30, shadowColor: COLORS.accent, shadowOpacity: 0.3 },
+  fabText: { color: '#0f172a', fontWeight: '700' },
 
-  whiteText: { color: COLORS.textWhite },
-
-  profitBanner: {
-    marginVertical: 20,
-    padding: 15,
-    borderTopRightRadius: 50,
-    borderBottomRightRadius: 50,
-    width: "50%",
-  },
-
-  profitContent: { flexDirection: "row", alignItems: "center", gap: 10 },
-
-  iconBox: {
-    width: 48,
-    height: 30,
-    backgroundColor: "#000",
-    borderRadius: 6,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  profitText: {
-    fontWeight: "700",
-    fontSize: 18,
-    color: "#352B2A",
-  },
-
-  menuSection: { marginTop: 10 },
-
-  sectionHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: COLORS.textWhite,
-  },
-
-  filtersRow: { flexDirection: "row", gap: 10 },
-
-  select: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    backgroundColor: "#081014",
-    borderRadius: 10,
-  },
-
-  selectText: { color: COLORS.textWhite },
-
-  filterBtn: {
-    backgroundColor: COLORS.accent,
-    paddingHorizontal: 10,
-    justifyContent: "center",
-    borderRadius: 8,
-  },
-
-  card: {
-    width: 140,
-    height: 180,
-    borderRadius: 20,
-    backgroundColor: "#111",
-    marginRight: 10,
-    marginTop: 15,
-  },
-
-  cardInner: { alignItems: "center", paddingTop: 10 },
-
-  displayBox: {
-    width: "85%",
-    height: 80,
-    backgroundColor: "#070707",
-    borderRadius: 12,
-  },
-
-  cardImage: { width: "100%", height: "100%", borderRadius: 12 },
-
-  title: { marginTop: 10, color: COLORS.textWhite },
-
-  amountGreen: { marginTop: 5, color: COLORS.textGreen },
-
-  todaySection: { marginTop: 25 },
-
-  todayCard: {
-    flexDirection: "row",
-    backgroundColor: "rgba(26,26,26,0.9)",
-    padding: 12,
-    borderRadius: 16,
-    marginTop: 10,
-  },
-
-  tdisplayBox: {
-    width: 80,
-    height: 80,
-    backgroundColor: "#070707",
-    borderRadius: 12,
-    marginRight: 10,
-  },
-
-  tcardImage: { width: "100%", height: "100%", borderRadius: 12 },
-
-  meta: { fontSize: 12, color: "#aaa", marginBottom: 5 },
-
-  metaValue: { color: "#fff" },
-
-  green: { color: COLORS.textGreen },
-
-  yellow: { color: "#facc15" },
-
-  fabContainer: { marginTop: 20, alignItems: "center" },
-
-  fabMain: {
-    backgroundColor: COLORS.accent,
-    paddingVertical: 12,
-    paddingHorizontal: 30,
-    borderRadius: 30,
-  },
-
-  fabText: { color: "#000", fontWeight: "700" },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
+  dropdownBox: { backgroundColor: '#1a1a1a', borderRadius: 12, paddingVertical: 8, width: 180, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', maxHeight: 260 },
+  dropdownItem: { paddingVertical: 10, paddingHorizontal: 16 },
+  dropdownText: { color: '#94a3b8', fontSize: 14 },
+  dropdownTextActive: { color: '#7CFF00', fontWeight: '600' },
 });
-
-type Values = {
-  cash: number;
-  gpay: number;
-  total: number;
-  invest: number;
-  todayProfit: number;
-  todayInvest: number;
-};
-
-function getValuesFor(month: string, year: string): Values {
-  const m = month ? parseInt(month, 10) : 0;
-  const y = parseInt(year, 10);
-
-  const base = 10000 + (y - 2020) * 2000 + m * 500;
-
-  return {
-    cash: base + 2500,
-    gpay: base + 1020,
-    total: base + 3520,
-    invest: base - 500,
-    todayProfit: Math.round(base / 10),
-    todayInvest: Math.round(base / 20),
-  };
-}
-
-function formatCurrency(n: number): string {
-  return "₹" + n.toLocaleString("en-IN");
-}
