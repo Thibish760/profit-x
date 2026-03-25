@@ -44,3 +44,27 @@ export type AppData = {
     cards: SavingCard[];
   };
 };
+
+export type IncomeRow = {
+  id: string;
+  date: string;
+  cash: string;
+  gpay: string;
+  malliKadai: string;
+  market: string;
+};
+
+export type AdditionalRow = {
+  id: string;
+  date: string;
+  egg: string;
+  piece: string;
+  potato: string;
+  gas: string;
+  fuel: string;
+};
+
+export type FinanceSnapshot = {
+  incomeRows: IncomeRow[];
+  addRows: AdditionalRow[];
+};

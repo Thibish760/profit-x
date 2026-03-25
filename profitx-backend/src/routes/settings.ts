@@ -9,24 +9,32 @@ const settingsSchema = z.object({
 
 export const settingsRouter = Router();
 
-settingsRouter.get('/settings/shop', (_req, res) => {
-  const data = readData();
-  res.json(data.settings);
+settingsRouter.get('/settings/shop', async (_req, res) => {
+  try {
+    const data = await readData();
+    res.json(data.settings);
+  } catch (error) {
+    console.error('Error reading settings:', error);
+    res.status(500).json({
+      message: 'Failed to read settings',
+      detail: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
 });
 
-settingsRouter.put('/settings/shop', (req, res) => {
+settingsRouter.put('/settings/shop', async (req, res) => {
   const parsed = settingsSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ message: 'Invalid payload', issues: parsed.error.flatten() });
   }
 
   try {
-    const data = readData();
+    const data = await readData();
     data.settings.shopName = parsed.data.shopName;
     if (parsed.data.ownerName) {
       data.settings.ownerName = parsed.data.ownerName;
     }
-    writeData(data);
+    await writeData(data);
 
     return res.json(data.settings);
   } catch (error) {
